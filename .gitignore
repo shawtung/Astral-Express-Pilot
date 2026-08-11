@@ -1,0 +1,7 @@
+node_modules/
+out/
+release/
+captures/
+.playwright-cli/
+*.log
+.DS_Store

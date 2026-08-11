@@ -1,0 +1,54 @@
+{
+  "name": "astral-express-pilot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build-app": "electron-vite build",
+    "dist": "electron-vite build && electron-builder",
+    "dist-dir": "electron-vite build && electron-builder --dir",
+    "modules": "tsx src/cli.ts modules",
+    "run-bot": "tsx src/cli.ts run",
+    "codex": "tsx src/cli.ts codex",
+    "validate": "tsx src/cli.ts validate",
+    "probe": "tsx src/cli.ts probe",
+    "grab": "tsx src/cli.ts grab",
+    "ocr": "tsx src/cli.ts ocr",
+    "ocr-file": "tsx src/cli.ts ocr-file",
+    "click": "tsx src/cli.ts click",
+    "drag": "tsx src/cli.ts drag",
+    "check-types": "tsc --noEmit",
+    "postinstall": "install-electron && rg -il0 --no-ignore --hidden -g '*.js' -g '!**/.vite/**' 'download the react' node_modules | xargs -0 perl -pi -e 's/var protocol = window\\.location\\.protocol;/var protocol = false;/' && rm -rf node_modules/.vite"
+  },
+  "dependencies": {
+    "@gutenye/ocr-models": "^1.4.2",
+    "@gutenye/ocr-node": "^1.4.8",
+    "playwright": "^1.62.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react": "5.2.0",
+    "electron": "43.3.0",
+    "electron-builder": "26.15.3",
+    "electron-vite": "5.0.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tsx": "^4.23.11",
+    "typescript": "^7.0.2",
+    "vite": "7.3.6"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "electron",
+      "electron-winstaller",
+      "onnxruntime-node",
+      "sharp"
+    ]
+  },
+  "packageManager": "pnpm@10.34.4+sha512.8768be55200ae3f2226b6527fcca2687e14bc4e5f12d7721a0f25da3df47915177058648db4177baf348120fa0ba2752d8d8d93f6beaf1fe64ae18da8de961af"
+}

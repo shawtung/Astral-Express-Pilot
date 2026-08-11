@@ -1,0 +1,51 @@
+appId: com.shawn.astral-express-pilot
+productName: Astral-Express-Pilot
+artifactName: ${name}-${version}-${arch}.${ext}
+
+# Nothing is released anywhere, so skip the auto-update metadata that needs a repository.
+publish: null
+
+directories:
+  output: release
+  buildResources: app/resources
+
+# Strips the other platforms' native binaries, which `files` cannot do without hardcoding a target.
+afterPack: tools/after-pack.cjs
+
+files:
+  - out/**
+  - app/resources/icon.png
+  - package.json
+
+# ORT reads the models with plain C++ file calls, which cannot see inside an asar.
+# The classifier model ships with the package but nothing here ever loads it.
+extraResources:
+  - from: node_modules/@gutenye/ocr-models/assets/ch_PP-OCRv4_det_infer.onnx
+    to: models/ch_PP-OCRv4_det_infer.onnx
+  - from: node_modules/@gutenye/ocr-models/assets/ch_PP-OCRv4_rec_infer.onnx
+    to: models/ch_PP-OCRv4_rec_infer.onnx
+  - from: node_modules/@gutenye/ocr-models/assets/ppocr_keys_v1.txt
+    to: models/ppocr_keys_v1.txt
+
+# Same reason, for the native addons themselves. The globs are loose enough to also match
+# pnpm's nested .pnpm layout, where these never sit at the top level.
+asarUnpack:
+  - '**/node_modules/onnxruntime-node/**'
+  - '**/node_modules/sharp/**'
+  - '**/node_modules/@img/**'
+  - '**/*.node'
+
+mac:
+  target:
+    - target: dmg
+      arch: arm64
+  category: public.app-category.entertainment
+  # Unsigned: there is no developer certificate, and this never leaves the machine.
+  identity: null
+
+win:
+  target: nsis
+
+linux:
+  target: AppImage
+  category: Game

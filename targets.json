@@ -1,0 +1,8 @@
+{
+  "mode": "overclock",
+  "combine": "or",
+  "smartEnvironment": true,
+  "plane": 1,
+  "environments": ["彩虹时代", "银·金·彩"],
+  "strategies": ["飞光·映月"]
+}
