@@ -166,10 +166,20 @@ export async function reachStart(page: Page): Promise<void> {
     log(`按 F 打开「货币战争」（第 ${attempt} 次）`);
     await holdKey(page, 'f', REACH_HOLD_MS);
 
-    const hit = await waitForScreen(page, [SCREENS.start, SCREENS.runInProgress], {
-      intervalMs: REACH_SCAN_MS,
-      rounds: REACH_SCAN_ROUNDS,
-    });
+    let hit = await waitForScreen(
+      page,
+      [SCREENS.start, SCREENS.runInProgress, SCREENS.expansionNotice],
+      { intervalMs: REACH_SCAN_MS, rounds: REACH_SCAN_ROUNDS },
+    );
+    // A version update pops the season changelog over the activity page; close it and look again.
+    if (hit?.id === SCREENS.expansionNotice.id) {
+      log('弹出赛季扩充说明，点 × 关闭');
+      await click(page, BUTTONS.closeNotice);
+      hit = await waitForScreen(page, [SCREENS.start, SCREENS.runInProgress], {
+        intervalMs: REACH_SCAN_MS,
+        rounds: REACH_SCAN_ROUNDS,
+      });
+    }
     if (hit) {
       log('已到达「货币战争」活动页');
       return;

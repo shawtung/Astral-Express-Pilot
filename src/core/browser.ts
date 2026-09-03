@@ -110,7 +110,7 @@ export async function hasFrames(page: Page): Promise<boolean> {
  * Polls instead of using `waitForFunction`, which parks inside Playwright for the whole
  * timeout and would swallow a stop for minutes.
  */
-export async function waitForStream(page: Page, timeoutMs = 180_000): Promise<void> {
+export async function waitForStream(page: Page, timeoutMs = 10 * 60_000): Promise<void> {
   const startedAt = Date.now();
   let reportedAt = 0;
 

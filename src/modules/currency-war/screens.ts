@@ -114,6 +114,15 @@ export const SCREENS = {
     anchor: '继续进度',
   },
   /**
+   * Season changelog shown over the activity page on the first entry after a version update.
+   * It blocks everything else until its X is clicked.
+   */
+  expansionNotice: {
+    id: 'expansionNotice',
+    probe: { x: 440, y: 252, width: 620, height: 48 },
+    anchor: '赛季扩充说明',
+  },
+  /**
    * Toast shown when a non-character card is dragged onto the board. It swallows input for
    * roughly three seconds, so seeing it means waiting before the next action.
    */
@@ -232,4 +241,6 @@ export const BUTTONS = {
   /** Both only exist on the activity page while a run is saved. */
   resumeRun: { x: 1695, y: 962 },
   endAndSettle: { x: 1399, y: 965 },
+  /** X in the top right corner of the season changelog popup. */
+  closeNotice: { x: 1472, y: 276 },
 } as const;
