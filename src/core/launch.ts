@@ -1,7 +1,7 @@
 import type { Page } from 'playwright';
-import { waitForStream } from './browser.ts';
+import { openGame, waitForStream, type GameSession } from './browser.ts';
 import type { Region } from './capture.ts';
-import { GAME_HEIGHT, GAME_WIDTH, PLAYER_SELECTOR } from './config.ts';
+import { GAME_HEIGHT, GAME_URL, GAME_WIDTH, PLAYER_SELECTOR } from './config.ts';
 import { report, throwIfCancelled } from './context.ts';
 import { clickGame } from './input.ts';
 import { joinText, readRegion } from './ocr.ts';
@@ -95,4 +95,31 @@ export async function enterCloudGame(page: Page): Promise<void> {
   }
 
   throw new Error(clicked ? '点了「点击进入」但画面没往下走' : '没等到「点击进入」，云游戏可能没启动起来');
+}
+
+/** Restarts that one run gets after a kick before giving up and calling the session stuck. */
+export const MAX_OFFLINE_RESTARTS = 3;
+
+/**
+ * Replaces a kicked session with a fresh browser and drives it back to the activity landing.
+ * The login lives in the profile, so the way back in is the same automated cold start. An
+ * attached browser is not ours to close, so its tab reloads instead, which still starts a
+ * new cloud session.
+ */
+export async function restartGame(
+  session: GameSession,
+  headless: boolean,
+  land?: (page: Page) => Promise<void>,
+): Promise<GameSession> {
+  if (session.owned) {
+    report('关闭掉线的浏览器，重新打开');
+    await session.context.close().catch(() => undefined);
+    session = await openGame({ headless });
+  } else {
+    report('浏览器不是脚本开的，刷新标签页重连云游戏');
+    await session.page.goto(GAME_URL);
+  }
+  await enterCloudGame(session.page);
+  await land?.(session.page);
+  return session;
 }

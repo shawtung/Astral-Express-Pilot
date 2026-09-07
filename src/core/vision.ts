@@ -74,6 +74,21 @@ export function colourDistance(a: Rgb, b: Rgb): number {
 }
 
 /**
+ * True when the whole frame is essentially black, which is how a session kicked for idling
+ * presents. Thresholds stay well under what any real scene with UI artwork reads, so a dark
+ * loading screen with a progress hint does not count. A dead player throws, and a dead page
+ * proves nothing either way, so that reads as not-black.
+ */
+export async function isBlackFrame(page: Page): Promise<boolean> {
+  try {
+    const stats = await regionStats(page, { x: 0, y: 0, width: 1920, height: 1080 });
+    return Math.max(...stats.mean) < 10 && stats.spread < 2;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Greyscale thumbnail of a region, small enough that stream compression noise averages out.
  * Two copies of the same card produce nearly the same values, different cards do not.
  */

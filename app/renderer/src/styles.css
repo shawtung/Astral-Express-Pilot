@@ -413,6 +413,27 @@ h1 {
   color: var(--gold);
 }
 
+/* Fixed corner preview for a hovered screenshot link; pinned rather than trailing the cursor
+   so the log underneath stays put and the eye always knows where to look. */
+.shot-preview {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 40;
+  pointer-events: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+}
+
+.shot-preview img {
+  display: block;
+  max-width: 45vw;
+  max-height: 50vh;
+}
+
 .stream p.bad {
   color: var(--danger);
 }

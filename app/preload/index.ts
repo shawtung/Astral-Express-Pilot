@@ -13,6 +13,7 @@ const api = {
   openDataDir: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('app:open-data-dir'),
   openCapture: (path: string): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('app:open-capture', path),
+  captureUrl: (path: string): Promise<string> => ipcRenderer.invoke('app:capture-url', path),
   /** Returns an unsubscribe so React effects can detach on re-render. */
   onLog: (handler: (line: LogLine) => void) => {
     const listener = (_event: IpcRendererEvent, line: LogLine) => handler(line);

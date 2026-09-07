@@ -5,7 +5,7 @@ import { envHeadless as headless, openGame, playerRect, waitForStream } from './
 import { grabToFile, type Region } from './core/capture.ts';
 import { DEBUG_PORT } from './core/config.ts';
 import { clickGame, dragGame } from './core/input.ts';
-import { enterCloudGame } from './core/launch.ts';
+import { enterCloudGame, MAX_OFFLINE_RESTARTS, restartGame } from './core/launch.ts';
 import { joinText, readBuffer, readRegion, type OcrLine } from './core/ocr.ts';
 import { ENVIRONMENTS, STRATEGIES } from './modules/currency-war/data/codex.ts';
 import { findModule, MODULES } from './modules/index.ts';
@@ -113,7 +113,7 @@ async function main(): Promise<void> {
         return;
       }
 
-      const session = await openGame();
+      let session = await openGame();
       try {
         if (headless) {
           console.log('\n浏览器已在无头模式启动，自行冷启动进入活动页。');
@@ -127,17 +127,28 @@ async function main(): Promise<void> {
         }
 
         await waitForStream(session.page);
-        const reason = await module.run(session.page, config);
-        console.log(`stopped: ${reason}`);
+        let restarts = 0;
+        for (;;) {
+          const reason = await module.run(session.page, config);
+          console.log(`stopped: ${reason}`);
+          // A kick is recoverable: the login persists, so a fresh browser goes right back in.
+          if (reason === 'offline' && restarts < MAX_OFFLINE_RESTARTS) {
+            restarts++;
+            console.log(`掉线重进（第 ${restarts}/${MAX_OFFLINE_RESTARTS} 次）`);
+            session = await restartGame(session, headless, module.reachStart);
+            continue;
+          }
 
-        if (reason !== 'target-found') {
-          const wait = createInterface({ input: process.stdin, output: process.stdout });
-          await wait.question(
-            headless
-              ? `浏览器已保留供排查（无头，CDP 端口 ${DEBUG_PORT}），处理完后按回车关闭并退出... `
-              : '浏览器已保留供排查，处理完后按回车关闭并退出... ',
-          );
-          wait.close();
+          if (reason !== 'target-found') {
+            const wait = createInterface({ input: process.stdin, output: process.stdout });
+            await wait.question(
+              headless
+                ? `浏览器已保留供排查（无头，CDP 端口 ${DEBUG_PORT}），处理完后按回车关闭并退出... `
+                : '浏览器已保留供排查，处理完后按回车关闭并退出... ',
+            );
+            wait.close();
+          }
+          break;
         }
       } finally {
         // Leaving a browser we launched alive would keep the profile locked and block the next run.

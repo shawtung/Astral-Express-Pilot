@@ -3,12 +3,13 @@ import { grabToFile } from './core/capture.ts';
 import { report } from './core/context.ts';
 
 /** Why the bot handed control back to the user. Every one of these ends the session. */
-export type StopReason = 'target-found' | 'run-in-progress' | 'stuck' | 'cancelled';
+export type StopReason = 'target-found' | 'run-in-progress' | 'stuck' | 'offline' | 'cancelled';
 
 const MESSAGES: Record<StopReason, string> = {
   'target-found': '已刷到目标，游戏标签页已关闭',
   'run-in-progress': '活动页有未结算的玩家对局，浏览器已保留，请手动处理后再启动',
   stuck: '连续多轮无法识别界面，可能掉线或卡住，浏览器已保留',
+  offline: '画面全黑，疑似长时间无操作被踢下线，将重启浏览器重进',
   cancelled: '已手动停止，浏览器已保留',
 };
 
@@ -17,6 +18,7 @@ const TAGS: Record<StopReason, string> = {
   'target-found': '完成',
   'run-in-progress': '停止',
   stuck: '停止',
+  offline: '掉线',
   cancelled: '已停止',
 };
 

@@ -1,7 +1,8 @@
 import { mkdirSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
-import { app, BrowserWindow, ipcMain, nativeImage, Notification, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeImage, net, Notification, protocol, shell } from 'electron';
 import type { GameSession } from '../../src/core/browser.ts';
 import { Cancelled, withRunContext } from '../../src/core/context.ts';
 import { ENVIRONMENTS, STRATEGIES } from '../../src/modules/currency-war/data/codex.ts';
@@ -16,6 +17,12 @@ const ICON_PATH = join(here, '../../app/resources/icon.png');
 /** Windows toasts are filed under this id, and show up as nothing recognisable without it. */
 const APP_ID = 'com.shawn.astral-express-pilot';
 
+/** Serves the screenshots dir to the renderer, which cannot reach file:// from a dev server. */
+const CAPTURE_SCHEME = 'capture';
+protocol.registerSchemesAsPrivileged([
+  { scheme: CAPTURE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+]);
+
 // Must run before ready. Left alone, userData would follow the app name and split dev from
 // packaged builds into two dirs, so the login would not carry over between them.
 const DATA_DIR = join(app.getPath('appData'), 'astral-express-pilot');
@@ -29,6 +36,8 @@ app.setPath('sessionData', SESSION_DIR);
 
 let window: BrowserWindow | null = null;
 let session: GameSession | null = null;
+/** How the current browser was opened, so a drop-out restart matches it. */
+let sessionHeadless = false;
 let running: AbortController | null = null;
 
 function send(channel: string, payload: unknown): void {
@@ -98,6 +107,7 @@ async function openBrowser(headless: boolean): Promise<{ ok: boolean }> {
   await closeSession();
   log(headless ? '正在以无头模式打开浏览器...' : '正在打开浏览器...');
   session = await openGame({ headless });
+  sessionHeadless = headless;
 
   if (!headless) {
     log('等待云游戏画面就绪...');
@@ -147,11 +157,23 @@ ipcMain.handle('bot:start', async (_event, config: TargetConfig): Promise<StopRe
   running = controller;
   const startedAt = Date.now();
   try {
-    const reason = await withRunContext({ signal: controller.signal, log }, () =>
-      currencyWar.run(session!.page, config),
-    );
-    notify(STOP_TITLES[reason], `耗时 ${Math.round((Date.now() - startedAt) / 1000)} 秒`);
-    return reason;
+    const { restartGame, MAX_OFFLINE_RESTARTS } = await import('../../src/core/launch.ts');
+    let restarts = 0;
+    for (;;) {
+      const reason = await withRunContext({ signal: controller.signal, log }, () =>
+        currencyWar.run(session!.page, config),
+      );
+      if (reason !== 'offline') {
+        notify(STOP_TITLES[reason], `耗时 ${Math.round((Date.now() - startedAt) / 1000)} 秒`);
+        return reason;
+      }
+      if (++restarts > MAX_OFFLINE_RESTARTS) {
+        notify(STOP_TITLES.stuck, '重进多次仍被踢下线，请手动确认');
+        return 'stuck';
+      }
+      log(`掉线重进（第 ${restarts}/${MAX_OFFLINE_RESTARTS} 次）`);
+      session = await restartGame(session!, sessionHeadless, currencyWar.reachStart);
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     log(`出错: ${message}`);
@@ -186,10 +208,21 @@ ipcMain.handle('app:open-capture', async (_event, path: unknown) => {
   return { ok: !(await shell.openPath(full)) };
 });
 
+ipcMain.handle('app:capture-url', async (_event, path: unknown) => {
+  if (typeof path !== 'string') return '';
+  const { CAPTURE_DIR } = await import('../../src/core/config.ts');
+  const full = resolve(path);
+  if (!full.startsWith(CAPTURE_DIR + sep)) return '';
+  if (!process.env.ELECTRON_RENDERER_URL) return `${CAPTURE_SCHEME}://${full}`;
+  const relative = full.slice(CAPTURE_DIR.length + 1);
+  return `/capture/${relative.split(sep).map(encodeURIComponent).join('/')}`;
+});
+
 const STOP_TITLES: Record<StopReason, string> = {
   'target-found': '刷到目标了',
   'run-in-progress': '有未结算的对局',
   stuck: '卡住了',
+  offline: '掉线了，正在重进',
   cancelled: '已停止',
 };
 
@@ -222,13 +255,22 @@ async function closeSession(): Promise<void> {
   ]);
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Must be set before any notification, and Windows only groups toasts correctly with it.
   app.setAppUserModelId(APP_ID);
   // The bot resolves its browser profile from APP_DIR.
   process.env.APP_DIR = app.getPath('userData');
   // Native ORT cannot read inside the asar, so packaged models ship as an extra resource.
   if (app.isPackaged) process.env.MODELS_DIR = join(process.resourcesPath, 'models');
+  // capture://<absolute path> previews a screenshot, scoped to the screenshots dir so an
+  // arbitrary page path cannot ride the scheme out of it.
+  const { CAPTURE_DIR } = await import('../../src/core/config.ts');
+  protocol.handle(CAPTURE_SCHEME, (request) => {
+    const target = decodeURIComponent(request.url.slice(`${CAPTURE_SCHEME}://`.length));
+    const full = resolve(target);
+    if (!full.startsWith(CAPTURE_DIR + sep)) return new Response(null, { status: 403 });
+    return net.fetch(pathToFileURL(full).toString());
+  });
   // macOS ignores BrowserWindow.icon and takes the dock icon from the bundle, which dev has none of.
   if (process.platform === 'darwin') app.dock?.setIcon(nativeImage.createFromPath(ICON_PATH));
   createWindow();

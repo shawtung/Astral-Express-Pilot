@@ -242,10 +242,12 @@ const LogRow = memo(function LogRow({
   line,
   pattern,
   tints,
+  onPreview,
 }: {
   line: Line;
   pattern: RegExp;
   tints: Map<string, string>;
+  onPreview: (path: string | null) => void;
 }) {
   return (
     <p className={line.tone}>
@@ -260,6 +262,8 @@ const LogRow = memo(function LogRow({
                 type="button"
                 className="path-link"
                 onClick={() => void window.pilot.openCapture(part)}
+                onMouseEnter={() => onPreview(part)}
+                onMouseLeave={() => onPreview(null)}
               >
                 {part}
               </button>
@@ -289,8 +293,26 @@ export function App() {
   const [error, setError] = useState('');
   const [guide, setGuide] = useState(false);
   const [dataDir, setDataDir] = useState('');
+  /** Screenshot path currently hovered in the log stream, previewed in a fixed overlay. */
+  const [preview, setPreview] = useState<string | null>(null);
+  /** Resolved img src for `preview`, since the scheme differs between dev and packaged. */
+  const [previewSrc, setPreviewSrc] = useState('');
   const tail = useRef<HTMLDivElement>(null);
   const seq = useRef(0);
+
+  useEffect(() => {
+    if (!preview) {
+      setPreviewSrc('');
+      return;
+    }
+    let stale = false;
+    void window.pilot.captureUrl(preview).then((url) => {
+      if (!stale) setPreviewSrc(url);
+    });
+    return () => {
+      stale = true;
+    };
+  }, [preview]);
 
   useEffect(() => {
     void window.pilot.loadCodex().then(setCodex);
@@ -501,11 +523,22 @@ export function App() {
       <section className="logs">
         <div className="stream">
           {logs.map((line) => (
-            <LogRow key={line.id} line={line} pattern={logPattern} tints={logTints} />
+            <LogRow
+              key={line.id}
+              line={line}
+              pattern={logPattern}
+              tints={logTints}
+              onPreview={setPreview}
+            />
           ))}
           <div ref={tail} />
         </div>
       </section>
+      {preview && previewSrc && (
+        <div className="shot-preview">
+          <img src={previewSrc} alt="现场截图预览" />
+        </div>
+      )}
       {guide && <Guide dataDir={dataDir} onClose={() => setGuide(false)} />}
     </div>
   );

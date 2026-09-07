@@ -5,6 +5,7 @@ import { clickGame, dragGame, holdKey } from '../../core/input.ts';
 import { containsFuzzy } from '../../core/match.ts';
 import { joinText, locateText, readRegion } from '../../core/ocr.ts';
 import { sleepAbout } from '../../core/util.ts';
+import { isBlackFrame } from '../../core/vision.ts';
 import { stop, type StopReason } from '../../notify.ts';
 import {
   detectScreens,
@@ -17,6 +18,7 @@ import {
   readRunProgress,
   readStrategies,
   waitForScreen,
+  type BenchSlot,
 } from './read.ts';
 import {
   BENCH_SLOTS,
@@ -115,13 +117,16 @@ async function waitFor(page: Page, expected: Screen | readonly Screen[]): Promis
   const hit = await waitForScreen(page, expected);
   if (hit) return hit;
   const wanted = (Array.isArray(expected) ? expected : [expected as Screen]).map((s) => s.id);
-  // A modal notice dims the whole board, so every probe goes blank at once; quote it before bailing.
-  const notice = joinText(await readRegion(page, NOTICE_DIALOG));
-  // Already failing, so a full sweep costs nothing next to not knowing where the run actually sits.
+  // A modal notice dims the whole board, so every probe goes blank at once; only quote it when
+  // nothing else matched, since the dialog region reads ordinary page text on other screens.
   const actual = await detectScreens(page);
   const where = actual.length
     ? `实际停在 ${actual.map((s) => s.id).join(' + ')}`
     : '全屏扫描也认不出当前界面';
+  if (actual.length) {
+    throw new Stalled(`等待 ${wanted.join(' / ')} 超时（${where}）`);
+  }
+  const notice = joinText(await readRegion(page, NOTICE_DIALOG));
   throw new Stalled(
     notice
       ? `弹窗挡住流程「${notice}」，等待 ${wanted.join(' / ')} 超时（${where}）`
@@ -210,10 +215,22 @@ async function openRun(page: Page, config: TargetConfig): Promise<boolean> {
   await click(page, BUTTONS.enterMode);
 
   await waitFor(page, SCREENS.gradeSelect);
-  await click(page, BUTTONS.startMatch);
+  // The click can land while the page is still settling and be swallowed, same as 出战.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await click(page, BUTTONS.startMatch);
+    const moved = await waitForScreen(page, SCREENS.factionIntro, { intervalMs: 2000, rounds: 3 });
+    if (moved) break;
+    if (attempt === 2) throw new Stalled('连点开始对局无效，仍停在难度选择页');
+    log('开始对局没生效，再点一次');
+  }
 
-  await waitFor(page, SCREENS.factionIntro);
-  await click(page, BUTTONS.next);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await click(page, BUTTONS.next);
+    const moved = await waitForScreen(page, SCREENS.planeIntro, { intervalMs: 2000, rounds: 3 });
+    if (moved) break;
+    if (attempt === 2) throw new Stalled('连点下一步无效，仍停在敌方介绍页');
+    log('下一步没生效，再点一次');
+  }
 
   await waitFor(page, SCREENS.planeIntro);
   await click(page, BUTTONS.blank);
@@ -304,6 +321,9 @@ async function collapseShop(page: Page): Promise<boolean> {
  * forming synergies whose popups cover the board and poison every reading taken from it.
  */
 async function deployTeam(page: Page): Promise<void> {
+  // The strategy screen pops up right after combat; its 返回备战界面 button carries the same
+  // characters the prepare anchor looks for, so an early wait can land here by mistake.
+  if (await isOnScreen(page, SCREENS.strategy)) return;
   // Standard mode always arrives here with the shop open: it pops up by itself after battle one.
   await collapseShop(page);
   let count = await readFrontRowCount(page);
@@ -320,7 +340,7 @@ async function deployTeam(page: Page): Promise<void> {
     return;
   }
 
-  const characters = (await readBench(page)).filter((slot) => slot.kind === 'character');
+  const characters = await readBenchCharacters(page);
   log(`备战: ${count.filled}/${count.cap}，可用角色 ${characters.length}`);
 
   const target = FRONT_ROW_SLOTS[0];
@@ -341,12 +361,32 @@ async function deployTeam(page: Page): Promise<void> {
     log(`槽位 ${slot.index} 上阵失败，等待提示消失`);
     await waitForToast(page);
   }
+  // A drag that fails on the strategy screen reads as zero characters up top; the counter and
+  // bench come from that screen's chrome, so check where the run actually is before reporting it.
+  if (!(await isOnScreen(page, SCREENS.prepare))) {
+    throw new Stalled('不在备战界面，可能误入了策略或结算画面');
+  }
   throw new Stalled('没有角色能上场');
+}
+
+/**
+ * Reads the bench, retrying while it comes back empty: the opening deal animates the cards in,
+ * so an early read sees placeholders rather than nobody to play.
+ */
+async function readBenchCharacters(page: Page): Promise<BenchSlot[]> {
+  for (let attempt = 0; attempt < COUNTER_READ_TRIES; attempt++) {
+    const characters = (await readBench(page)).filter((slot) => slot.kind === 'character');
+    if (characters.length) return characters;
+    await sleepAbout(1500);
+  }
+  return [];
 }
 
 /** Clicks 出战 and clears the confirmation. The shop popup can eat the first click. */
 async function startBattle(page: Page): Promise<void> {
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    // The shop folds away with the first click otherwise, which spends a whole attempt on nothing.
+    await collapseShop(page);
     await click(page, BUTTONS.deploy, 2000);
 
     if (await isOnScreen(page, SCREENS.deployPrompt)) {
@@ -355,6 +395,9 @@ async function startBattle(page: Page): Promise<void> {
     // Leaving 备战 is the only proof the fight started; confirming the prompt does not guarantee it.
     if (!(await isOnScreen(page, SCREENS.prepare))) return;
   }
+  // The entry animation outlasts the per-click settle on a slow stream, so one last look keeps
+  // a fight that actually started from being reported as a stuck button.
+  if (!(await waitForScreen(page, SCREENS.prepare, { intervalMs: 1500, rounds: 4 }))) return;
   throw new Stalled('连点出战无效，可能被未知弹窗挡住');
 }
 
@@ -550,9 +593,11 @@ async function resumeSavedRun(page: Page, config: TargetConfig): Promise<string 
   if (mode !== config.mode) {
     return `对局是${MODE_LABELS[mode]}，配置要的是${MODE_LABELS[config.mode]}`;
   }
-  // Environments can only be read while they are being offered, so a resumed run has none.
+  // Environments can only be read while they are being offered, so a resumed run plays on
+  // as if none had been picked. An OR target can still land on a strategy, and an AND one
+  // can never settle here, so it washes out at the strategy stage and restarts fresh.
   if (!config.smartEnvironment && config.environments.length) {
-    return '配置按投资环境筛选，但续上的对局读不回环境';
+    log('续上的对局读不回投资环境，本局按无环境筛选继续');
   }
   if (progress.layer !== 1 || progress.battle > BATTLES_BEFORE_STRATEGY[mode] + 1) {
     return `进度 ${where} 已越过第一次投资策略选择`;
@@ -635,6 +680,12 @@ export async function run(page: Page, config: TargetConfig): Promise<StopReason>
       return 'cancelled';
     }
     if (!(error instanceof Stalled)) throw error;
+    // A session kicked for idling goes black, and the way back is a fresh browser, so the
+    // caller restarts instead of parking a dead tab for the operator.
+    if (await isBlackFrame(page)) {
+      await stop(page, 'offline', error.message);
+      return 'offline';
+    }
     await stop(page, 'stuck', error.message);
     return 'stuck';
   }

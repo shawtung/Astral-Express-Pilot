@@ -185,6 +185,7 @@ export async function readRefreshCharges(page: Page): Promise<number[]> {
 export async function isOnScreen(page: Page, screen: Screen): Promise<boolean> {
   const text = joinText(await readRegion(page, screen.probe));
   const anchors = typeof screen.anchor === 'string' ? [screen.anchor] : screen.anchor;
+  if (screen.reject && containsFuzzy(text, screen.reject, 0.6)) return false;
   return anchors.some((anchor) => containsFuzzy(text, anchor, 0.6));
 }
 

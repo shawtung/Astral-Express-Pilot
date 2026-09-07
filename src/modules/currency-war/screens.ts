@@ -10,6 +10,8 @@ export type Screen = {
   probe: Region;
   /** Text expected inside `probe`; fuzzy-matched against OCR output. Any one match is enough. */
   anchor: string | readonly string[];
+  /** Text that disqualifies a match, e.g. 返回备战界面 contains 备战 but is not the prepare phase. */
+  reject?: string;
 };
 
 export const SCREENS = {
@@ -56,6 +58,8 @@ export const SCREENS = {
     // Wide enough to cover both layouts: the title shifts when the run shows an environment badge.
     probe: { x: 250, y: 20, width: 400, height: 95 },
     anchor: '备战阶段',
+    // The strategy screen's 返回备战界面 button carries the same characters.
+    reject: '返回备战',
   },
   /** 盛会之星 popup. It covers the front row and the counter, so it must be cleared first. */
   starPick: {
