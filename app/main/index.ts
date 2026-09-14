@@ -1,8 +1,8 @@
 import { mkdirSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
-import { app, BrowserWindow, ipcMain, nativeImage, net, Notification, protocol, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeImage, Notification, protocol, shell } from 'electron';
 import type { GameSession } from '../../src/core/browser.ts';
 import { Cancelled, withRunContext } from '../../src/core/context.ts';
 import { ENVIRONMENTS, STRATEGIES } from '../../src/modules/currency-war/data/codex.ts';
@@ -52,7 +52,9 @@ function createWindow(): void {
   window = new BrowserWindow({
     width: 600,
     height: 480,
-    title: 'Astral Express Pilot',
+    // app.getVersion reads package.json in dev (via ELECTRON_RENDERER_URL's project root) and
+    // the bundle version when packaged, so one expression covers both.
+    title: `Astral Express Pilot v${app.getVersion()}${app.isPackaged ? '' : ' (dev)'}`,
     icon: ICON_PATH,
     webPreferences: { preload: join(here, '../preload/index.cjs') },
   });
@@ -263,13 +265,21 @@ app.whenReady().then(async () => {
   // Native ORT cannot read inside the asar, so packaged models ship as an extra resource.
   if (app.isPackaged) process.env.MODELS_DIR = join(process.resourcesPath, 'models');
   // capture://<absolute path> previews a screenshot, scoped to the screenshots dir so an
-  // arbitrary page path cannot ride the scheme out of it.
+  // arbitrary page path cannot ride the scheme out of it. fs.read rather than net.fetch,
+  // which refuses file:// URLs outright.
   const { CAPTURE_DIR } = await import('../../src/core/config.ts');
-  protocol.handle(CAPTURE_SCHEME, (request) => {
+  protocol.handle(CAPTURE_SCHEME, async (request) => {
     const target = decodeURIComponent(request.url.slice(`${CAPTURE_SCHEME}://`.length));
     const full = resolve(target);
     if (!full.startsWith(CAPTURE_DIR + sep)) return new Response(null, { status: 403 });
-    return net.fetch(pathToFileURL(full).toString());
+    try {
+      const data = await readFile(full);
+      return new Response(new Uint8Array(data), {
+        headers: { 'Content-Type': 'image/png', 'Content-Length': String(data.length) },
+      });
+    } catch {
+      return new Response(null, { status: 404 });
+    }
   });
   // macOS ignores BrowserWindow.icon and takes the dock icon from the bundle, which dev has none of.
   if (process.platform === 'darwin') app.dock?.setIcon(nativeImage.createFromPath(ICON_PATH));
