@@ -10,6 +10,7 @@ import { stop, type StopReason } from '../../notify.ts';
 import {
   detectScreens,
   isOnScreen,
+  isSparkleOnField,
   readBench,
   readEnvironmentCards,
   readFrontRowCount,
@@ -46,6 +47,12 @@ import {
 /** Thrown when the game stops showing anything we recognise. Always ends the session. */
 class Stalled extends Error {}
 
+/**
+ * Thrown when the run is worth restarting rather than playing out. The outer loop abandons
+ * the run and moves on to a fresh deal.
+ */
+class GiveUpRun extends Error {}
+
 /** Guard against a mis-detected screen turning a loop into an endless one. */
 const MAX_STEPS_PER_RUN = 16;
 
@@ -58,9 +65,12 @@ const DEPLOY_ROOM = 3;
 /** Retries allowed for the deploy counter, which is unreadable while the board animates in. */
 const COUNTER_READ_TRIES = 5;
 
-/** A weak team drags a winnable fight out, so combat gets its own budget rather than sharing the
- * default one, which also decides when the game counts as stuck. */
-const BATTLE_ROUNDS = 10;
+/** A weak team drags a winnable fight out — a lone stall character can keep one going for close
+ * to ten minutes — so combat gets its own budget rather than sharing the default one, which also
+ * decides when the game counts as stuck. The scan runs coarser than the default to keep such a
+ * long window cheap. */
+const BATTLE_SCAN_MS = 15_000;
+const BATTLE_ROUNDS = 40;
 
 /** 黄金投资 and its kin hand out a fresh pick on the spot, and that pick can do it again. */
 const STRATEGY_PICK_CHAIN = 7;
@@ -317,6 +327,21 @@ async function collapseShop(page: Page): Promise<boolean> {
 }
 
 /**
+ * Checks the bond column for Sparkle's tell. She is the only character who lights 战技点,
+ * 盛会之星 and 量子同频 all at once, and her auto-battle logic is broken in this mode - she
+ * never attacks - so a fight she is in cannot be won. The bonded set may drift as the game
+ * updates, which would surface as this check going quiet rather than as a wrong restart.
+ */
+async function refuseSparkle(page: Page): Promise<void> {
+  // The column animates in behind the counter, so one re-read covers a board that is still
+  // settling; a clean miss on both reads means a different character.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (await isSparkleOnField(page)) throw new GiveUpRun('上阵的是花火，她的自动战斗不会攻击');
+    if (attempt === 0) await sleepAbout(1500);
+  }
+}
+
+/**
  * Sends exactly one unit into battle. The opening fight is a giveaway, and a real team keeps
  * forming synergies whose popups cover the board and poison every reading taken from it.
  */
@@ -337,6 +362,7 @@ async function deployTeam(page: Page): Promise<void> {
   const room = count.cap - count.filled;
   if (room < DEPLOY_ROOM) {
     log(`备战: 场上已有角色 ${count.filled}/${count.cap}，直接开战`);
+    await refuseSparkle(page);
     return;
   }
 
@@ -356,6 +382,7 @@ async function deployTeam(page: Page): Promise<void> {
     const after = await readFrontRowCount(page);
     if (after && after.cap - after.filled < room) {
       log(`上阵完成: ${after.filled}/${after.cap}`);
+      await refuseSparkle(page);
       return;
     }
     log(`槽位 ${slot.index} 上阵失败，等待提示消失`);
@@ -444,7 +471,7 @@ async function reachStrategyScreen(page: Page, config: TargetConfig): Promise<st
       const done = await waitForScreen(
         page,
         [SCREENS.battleResult, SCREENS.starPick, SCREENS.strategy, SCREENS.prepare],
-        { rounds: BATTLE_ROUNDS },
+        { intervalMs: BATTLE_SCAN_MS, rounds: BATTLE_ROUNDS },
       );
       if (!done) throw new Stalled('战斗过久未结束，可能打不过或画面卡住');
       continue;
@@ -653,6 +680,19 @@ async function playOnce(page: Page, config: TargetConfig): Promise<RunOutcome> {
   return { kind: 'restart' };
 }
 
+/** Runs one attempt from the activity page, swallowing GiveUpRun into a restart. */
+async function playRound(page: Page, config: TargetConfig): Promise<RunOutcome> {
+  try {
+    return await playOnce(page, config);
+  } catch (error) {
+    if (!(error instanceof GiveUpRun)) throw error;
+    // A hopeless deal is exactly what restarting is for: drop the run and deal again.
+    log(`重开: ${error.message}`);
+    await abandon(page);
+    return { kind: 'restart' };
+  }
+}
+
 export async function run(page: Page, config: TargetConfig): Promise<StopReason> {
   try {
     log('校验是否处于「货币战争」初始界面');
@@ -664,7 +704,7 @@ export async function run(page: Page, config: TargetConfig): Promise<StopReason>
 
     for (let round = 1; ; round++) {
       log(`===== 第 ${round} 轮 =====`);
-      const outcome = await playOnce(page, config);
+      const outcome = await playRound(page, config);
       if (outcome.kind === 'target-found') {
         await stop(page, 'target-found');
         return 'target-found';

@@ -158,8 +158,14 @@ export const ENVIRONMENT_CARDS = CARD_CENTRES_X.map((x) => ({
 /** Reads as one line, "剩余次数：1 确认". The reset button itself is icon only. */
 export const ENVIRONMENT_RESET_LABEL: Region = { x: 560, y: 960, width: 900, height: 80 };
 
-/** Shows "n/3". Starts right of the little person icon, which OCRs as a 1 and corrupts the count. */
+/** Shows "n/3". Starts right of the little man icon, which OCRs as a 1 and corrupts the count. */
 export const FRONT_ROW_COUNTER: Region = { x: 895, y: 200, width: 150, height: 100 };
+
+/**
+ * Left column listing the bonds lit by whoever is on the field. It only fills in once a
+ * character is actually deployed, so it reads back who made it up front. One fifth of the width.
+ */
+export const BOND_COLUMN: Region = { x: 0, y: 0, width: 384, height: 1080 };
 
 /** Title, body and single confirm button of a modal notice. Only read when everything else went blank. */
 export const NOTICE_DIALOG: Region = { x: 600, y: 380, width: 760, height: 400 };

@@ -6,6 +6,7 @@ import { joinText, readRegion } from '../../core/ocr.ts';
 import {
   BENCH_SLOT_CARDS,
   BENCH_SLOT_LABELS,
+  BOND_COLUMN,
   ENVIRONMENT_CARDS,
   ENVIRONMENT_ROW,
   FRONT_ROW_COUNTER,
@@ -102,6 +103,18 @@ export function extractFrontRowCount(text: string): { filled: number; cap: numbe
   const cap = Number(hit[2]);
   // A stray glyph glued to the front turns "2/3" into "12/3"; an impossible count is not usable.
   return filled > cap ? null : { filled, cap };
+}
+
+/**
+ * Reads the bond column on the left, which only lights up for characters actually on the field.
+ * Sparkle is the only one who lights all three of these at once, so the set identifies her.
+ */
+const SPARKLE_BONDS = ['战技点', '盛会之星', '量子同频'] as const;
+
+export async function isSparkleOnField(page: Page): Promise<boolean> {
+  const lines = await readRegion(page, BOND_COLUMN);
+  const text = joinText(lines);
+  return SPARKLE_BONDS.every((bond) => containsFuzzy(text, bond, 0.6));
 }
 
 /**

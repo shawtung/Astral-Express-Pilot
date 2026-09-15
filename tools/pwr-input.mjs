@@ -10,9 +10,13 @@ function pwr(...args) {
 selectGameTab();
 
 const rectProbe = `() => {
-  const c = document.querySelector('#canvas-player');
+  const c = document.querySelector('#canvas-player, video.game-player__video');
+  if (!c) throw new Error('game player not found');
   const r = c.getBoundingClientRect();
-  return JSON.stringify({ left: r.left, top: r.top, width: r.width, height: r.height, bw: c.width, bh: c.height });
+  // A <video> reports 0 for width/height attributes; its stream size lives on videoWidth/Height.
+  const bw = c instanceof HTMLVideoElement ? c.videoWidth : c.width;
+  const bh = c instanceof HTMLVideoElement ? c.videoHeight : c.height;
+  return JSON.stringify({ left: r.left, top: r.top, width: r.width, height: r.height, bw, bh });
 }`;
 
 const out = pwr('eval', rectProbe);

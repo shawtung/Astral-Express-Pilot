@@ -17,8 +17,8 @@ const region =
 const scale = numbers.length >= 5 ? numbers[4] : 1;
 
 const grab = `() => {
-  const c = document.querySelector('#canvas-player');
-  if (!c) throw new Error('canvas not found');
+  const c = document.querySelector('#canvas-player, video.game-player__video');
+  if (!c) throw new Error('game player not found');
   const roi = ${JSON.stringify(region)};
   const off = document.createElement('canvas');
   off.width = Math.round(roi.width * ${scale});

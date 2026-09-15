@@ -59,6 +59,9 @@ function createWindow(): void {
     webPreferences: { preload: join(here, '../preload/index.cjs') },
   });
 
+  // The page's own <title> would overwrite the versioned title set here on every load.
+  window.on('page-title-updated', (event) => event.preventDefault());
+
   // Anything the page tries to open goes to the real browser, never a second Electron window.
   window.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
@@ -215,7 +218,12 @@ ipcMain.handle('app:capture-url', async (_event, path: unknown) => {
   const { CAPTURE_DIR } = await import('../../src/core/config.ts');
   const full = resolve(path);
   if (!full.startsWith(CAPTURE_DIR + sep)) return '';
-  if (!process.env.ELECTRON_RENDERER_URL) return `${CAPTURE_SCHEME}://${full}`;
+  if (!process.env.ELECTRON_RENDERER_URL) {
+    // Standard schemes parse like http, so an absolute path would land in the host and be
+    // lowercased (`/Users` -> `users`). A dummy host keeps the path in the pathname, where
+    // case survives; segments are encoded so spaces (Application Support) do not break it.
+    return `${CAPTURE_SCHEME}://capture${full.split(sep).map(encodeURIComponent).join('/')}`;
+  }
   const relative = full.slice(CAPTURE_DIR.length + 1);
   return `/capture/${relative.split(sep).map(encodeURIComponent).join('/')}`;
 });
@@ -269,8 +277,8 @@ app.whenReady().then(async () => {
   // which refuses file:// URLs outright.
   const { CAPTURE_DIR } = await import('../../src/core/config.ts');
   protocol.handle(CAPTURE_SCHEME, async (request) => {
-    const target = decodeURIComponent(request.url.slice(`${CAPTURE_SCHEME}://`.length));
-    const full = resolve(target);
+    // The host is a constant dummy; the real path lives percent-encoded in the pathname.
+    const full = resolve(decodeURIComponent(new URL(request.url).pathname));
     if (!full.startsWith(CAPTURE_DIR + sep)) return new Response(null, { status: 403 });
     try {
       const data = await readFile(full);
