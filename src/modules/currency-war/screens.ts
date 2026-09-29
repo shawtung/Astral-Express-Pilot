@@ -135,6 +135,16 @@ export const SCREENS = {
     probe: { x: 560, y: 505, width: 800, height: 80 },
     anchor: '无法移动该目标至场上',
   },
+  /**
+   * Season-end notice and its kin: a popup covering the page that only goes away when a blank
+   * spot is clicked. The bottom hint line is the only stable text it shows, and it sits well
+   * above the planeIntro prompt, which spells the same-flavoured 点击空白处继续 further down.
+   */
+  blankDismiss: {
+    id: 'blankDismiss',
+    probe: { x: 560, y: 800, width: 800, height: 100 },
+    anchor: '点击空白处',
+  },
 } as const satisfies Record<string, Screen>;
 
 /** Row holding the environment names. Kept for a cheap "what was offered" read. */
@@ -166,6 +176,9 @@ export const FRONT_ROW_COUNTER: Region = { x: 895, y: 200, width: 150, height: 1
  * character is actually deployed, so it reads back who made it up front. One fifth of the width.
  */
 export const BOND_COLUMN: Region = { x: 0, y: 0, width: 384, height: 1080 };
+
+/** The bottom hint line of 点击空白处-type popups, kept wide so any layout lands inside it. */
+export const BLANK_HINT_ROI: Region = { x: 560, y: 800, width: 800, height: 100 };
 
 /** Title, body and single confirm button of a modal notice. Only read when everything else went blank. */
 export const NOTICE_DIALOG: Region = { x: 600, y: 380, width: 760, height: 400 };

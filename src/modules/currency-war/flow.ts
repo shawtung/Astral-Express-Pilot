@@ -30,6 +30,7 @@ import {
   FRONT_ROW_SLOTS,
   MODE_BUTTON_LABEL,
   MODE_CARDS,
+  BLANK_HINT_ROI,
   NOTICE_DIALOG,
   SCREENS,
   STRATEGY_CARDS,
@@ -89,6 +90,8 @@ const BATTLES_BEFORE_STRATEGY: Record<Mode, number> = {
 const REACH_TRIES = 4;
 const REACH_SCAN_MS = 3000;
 const REACH_SCAN_ROUNDS = 4;
+/** Popups the reach scan can absorb before one of the real destinations has to show through. */
+const REACH_LAYERS = 4;
 
 /** The exit arrow is dead while a stage animates, so the prompt is worth asking for more than once. */
 const EXIT_TRIES = 3;
@@ -181,19 +184,37 @@ export async function reachStart(page: Page): Promise<void> {
     log(`按 F 打开「货币战争」（第 ${attempt} 次）`);
     await holdKey(page, 'f', REACH_HOLD_MS);
 
-    let hit = await waitForScreen(
-      page,
-      [SCREENS.start, SCREENS.runInProgress, SCREENS.expansionNotice],
-      { intervalMs: REACH_SCAN_MS, rounds: REACH_SCAN_ROUNDS },
-    );
-    // A version update pops the season changelog over the activity page; close it and look again.
-    if (hit?.id === SCREENS.expansionNotice.id) {
-      log('弹出赛季扩充说明，点 × 关闭');
-      await click(page, BUTTONS.closeNotice);
-      hit = await waitForScreen(page, [SCREENS.start, SCREENS.runInProgress], {
-        intervalMs: REACH_SCAN_MS,
-        rounds: REACH_SCAN_ROUNDS,
-      });
+    // Season notices and their kin cover the page until a blank spot is clicked, while the
+    // changelog takes an X in its corner. Keep absorbing popups until one of the real
+    // destinations shows through, or the tries run out.
+    let hit: Screen | null = null;
+    for (let layer = 0; layer < REACH_LAYERS && !hit; layer++) {
+      hit = await waitForScreen(
+        page,
+        [SCREENS.start, SCREENS.runInProgress, SCREENS.expansionNotice, SCREENS.blankDismiss],
+        { intervalMs: REACH_SCAN_MS, rounds: layer === 0 ? REACH_SCAN_ROUNDS : 1 },
+      );
+      if (hit?.id === SCREENS.expansionNotice.id) {
+        log('弹出赛季扩充说明，点 × 关闭');
+        await click(page, BUTTONS.closeNotice);
+        hit = null;
+        continue;
+      }
+      if (hit?.id === SCREENS.blankDismiss.id) {
+        // Click wherever the hint line actually is, rather than a measured point: these
+        // popups vary in layout, and both blank-click-to-close and blank-click-to-continue
+        // dismiss the popup in one click either way.
+        const spot = await locateText(page, BLANK_HINT_ROI, SCREENS.blankDismiss.anchor, {
+          minScore: 0.6,
+        });
+        if (!spot) {
+          const shot = await grabToFile(page, 'blank-hint-missing');
+          throw new Stalled(`认出弹窗却找不到「${SCREENS.blankDismiss.anchor}」文字，截图: ${shot}`);
+        }
+        log('弹出带「点击空白处」提示的弹窗，点提示文字关闭');
+        await click(page, spot);
+        hit = null;
+      }
     }
     if (hit) {
       log('已到达「货币战争」活动页');
